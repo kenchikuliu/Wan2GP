@@ -11,6 +11,8 @@ from mmgp import quant_router
 VARIANT_LABEL_OTHER_NON_SHARED = "Other Non Shared"
 VARIANT_LABEL_OTHER_SHARED = "Other Shared"
 VARIANT_LABEL_MISSING = "Missing"
+GLOBAL_SHARED_MODEL_TYPE = "__wgp_global_shared__"
+GLOBAL_SHARED_LABEL = "WanGP global shared assets"
 
 
 class modelsManagerPlugin(WAN2GPPlugin):
@@ -63,6 +65,7 @@ class modelsManagerPlugin(WAN2GPPlugin):
         self.request_global("displayed_model_types")
         self.request_global("transformer_types")
         self.request_global("get_transformer_dtype")
+        self.request_global("query_global_shared_model_files")
 
         self.add_custom_js(self._get_js())
 
@@ -718,6 +721,7 @@ class modelsManagerPlugin(WAN2GPPlugin):
             for path in model_files:
                 self._file_usage_models[path].add(model_type)
 
+        self._mark_global_shared_files()
         self._rebalance_other_shared_variants(model_types)
 
         self._usage_files = {}
@@ -1938,6 +1942,9 @@ class modelsManagerPlugin(WAN2GPPlugin):
             self._errors.append(f"{model_type}: {exc}")
             return set()
 
+        return self._collect_download_def_file_paths(download_defs)
+
+    def _collect_download_def_file_paths(self, download_defs):
         if not download_defs:
             return set()
         if isinstance(download_defs, dict):
@@ -1945,6 +1952,8 @@ class modelsManagerPlugin(WAN2GPPlugin):
 
         files = set()
         for download_def in download_defs:
+            if not isinstance(download_def, dict):
+                continue
             source_folders = download_def.get("sourceFolderList", [])
             file_lists = download_def.get("fileList", [])
             target_folders = download_def.get("targetFolderList")
@@ -1970,6 +1979,21 @@ class modelsManagerPlugin(WAN2GPPlugin):
                     )
                     files.add(self._resolve_download_relpath(rel_path))
         return {path for path in files if path}
+
+    def _collect_global_shared_file_paths(self):
+        query = getattr(self, "query_global_shared_model_files", None)
+        if query is None:
+            return set()
+        try:
+            return self._collect_download_def_file_paths(query())
+        except Exception as exc:
+            self._errors.append(f"Global shared files: {exc}")
+            return set()
+
+    def _mark_global_shared_files(self):
+        for path in self._collect_global_shared_file_paths():
+            if path in self._file_usage_models:
+                self._file_usage_models[path].add(GLOBAL_SHARED_MODEL_TYPE)
 
     def _collect_handler_files(self, model_type, model_def):
         files = self._collect_handler_file_paths(model_type, model_def)
@@ -2246,6 +2270,8 @@ class modelsManagerPlugin(WAN2GPPlugin):
             self._model_variants[model_type] = new_variants
 
     def _get_model_shared_label(self, model_type):
+        if model_type == GLOBAL_SHARED_MODEL_TYPE:
+            return GLOBAL_SHARED_LABEL
         model_name = self.get_model_name(model_type)
         if model_name:
             return model_name
