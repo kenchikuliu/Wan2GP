@@ -93,7 +93,22 @@ class EnvsManager:
             print(f"[!] Environment '{name}' not found.")
 
     def add_env(self, name, type, path):
-        self.data["envs"][name] = {"type": type, "path": path}
+        if path:
+            cwd = os.getcwd()
+            abs_path = os.path.abspath(path)
+            try:
+                rel_path = os.path.relpath(abs_path, cwd)
+                if rel_path.startswith("..") or rel_path == ".":
+                    final_path = abs_path
+                else:
+                    final_path = os.path.join(".", rel_path)
+            except ValueError:
+                final_path = abs_path
+        else:
+            final_path = ""
+
+        self.data["envs"][name] = {"type": type, "path": final_path}
+        
         if not self.data["active"]:
             self.data["active"] = name
         self.save()
@@ -563,7 +578,6 @@ def do_manage():
                 print("3. conda")
                 t_choice = input("Choice (Default 1): ")
                 e_type = "uv" if t_choice == "2" else "conda" if t_choice == "3" else "venv"
-                
                 manager.add_env(name, e_type, os.path.abspath(path))
                 print(f"[*] Registered '{name}' at {os.path.abspath(path)}")
             input("Press Enter...")
